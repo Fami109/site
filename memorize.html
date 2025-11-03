@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>単語暗記アプリ（ローカルHTML）</title>
+  <!-- オフラインでも使えるよう、外部CSSは使わず軽量な内蔵スタイルのみ -->
+  <style>
+    :root { --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#9ca3af; --accent:#22d3ee; --card:#0b1220; --border:#1f2937; }
+    html,body { height:100%; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif; background: radial-gradient(1200px 800px at 10% 0%, #0b1020, #060914) fixed; color:var(--text); }
+    .container { max-width: 1100px; margin: 24px auto 80px; padding: 0 16px; }
+    .app-title { font-size: clamp(22px, 3.5vw, 32px); font-weight: 800; letter-spacing: .02em; display:flex; align-items:center; gap:.5rem; }
+    .badge { font-size:12px; padding:2px 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted); }
+    .panel { background: linear-gradient(180deg, #0d1426 0%, #0a1020 100%); border:1px solid var(--border); border-radius:16px; padding:16px; box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.03); }
+    .panel h2 { font-size: 14px; color: var(--muted); letter-spacing:.08em; font-weight:700; text-transform:uppercase; margin:0 0 10px; }
+    .controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .controls > * { flex: none; }
+    .file-zone { border:1px dashed #334155; border-radius:12px; padding:14px 12px; display:flex; gap:12px; align-items:center; background:#0a1222; }
+    .file-zone.dragover { outline: 2px solid var(--accent); outline-offset: 2px; }
+    input[type="file"] { display:none; }
+    .btn { background: #0b162a; color: var(--text); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-weight:700; letter-spacing:.02em; cursor:pointer; transition: transform .05s ease, background .2s ease, border-color .2s ease; }
+    .btn:hover { background:#0e1b34; border-color:#334155; }
+    .btn:active { transform: translateY(1px); }
+    .btn.secondary { background:#0b1322; }
+    .btn.ghost { background:transparent; }
+    .btn.small { padding:6px 10px; font-weight:600; font-size:12px; }
+    .row { display:flex; gap:12px; align-items:center; }
+    .grow { flex:1; }
+    .search { appearance:none; width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--border); background:#0a0f1d; color:var(--text); font-size:14px; }
+    .hint { font-size:12px; color:var(--muted); }
+
+    .cards { margin-top:16px; display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px; }
+    details.card { border: 1px solid var(--border); background: linear-gradient(180deg, #0b1220 0%, #070d18 100%); border-radius:16px; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.03); }
+    .summary { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px; cursor:pointer; user-select:none; }
+    .word { font-weight:800; font-size:16px; letter-spacing:.02em; }
+    .yomi { font-size:12px; color:var(--muted); }
+    .meta { display:flex; align-items:center; gap:8px; }
+    .pill { font-size:11px; color:#67e8f9; background:#072734; border:1px solid #0e3442; border-radius:999px; padding:3px 8px; }
+    .content { padding: 0 16px 16px; display:grid; gap:10px; }
+    .label { font-size:11px; color:var(--muted); text-transform: uppercase; letter-spacing:.08em; }
+    .text { font-size:14px; line-height:1.7; }
+
+    .empty { text-align:center; padding:40px 12px; color:var(--muted); }
+
+    .footer { position:fixed; left:0; right:0; bottom:0; background:rgba(5,8,14,.85); border-top:1px solid var(--border); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    .footer-inner { max-width:1100px; margin:0 auto; padding:10px 16px; display:flex; gap:8px; align-items:center; justify-content:space-between; }
+    .stat { font-size:12px; color:var(--muted); }
+
+    /* アニメーション/アクセント */
+    .glow { box-shadow: 0 0 0 2px rgba(34, 211, 238, .15), 0 0 0 6px rgba(34, 211, 238, .06); }
+  </style>
+  <!-- Excel(.xlsx) を読み込むためのライブラリ（オンライン時）-->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="app-title">単語暗記アプリ <span class="badge">ローカルHTML / Excel・CSV対応</span></div>
+
+    <div class="panel" role="region" aria-label="読み込み">
+      <h2>1. 単語ファイルを読み込む</h2>
+      <div id="drop" class="file-zone" tabindex="0" aria-label="ここにExcel/CSVをドラッグ&ドロップ、またはボタンで選択">
+        <div class="row grow">
+          <button id="fileBtn" class="btn">ファイルを選択</button>
+          <input id="file" type="file" accept=".xlsx,.xls,.csv" />
+          <div class="hint">対応形式: .xlsx / .xls / .csv（※オフライン時はCSV推奨）</div>
+        </div>
+        <div class="row">
+          <button id="demoBtn" class="btn secondary small" title="サンプルデータを読み込み">サンプル読み込み</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" role="region" aria-label="操作">
+      <h2>2. 操作</h2>
+      <div class="controls">
+        <div class="row grow">
+          <input id="q" class="search" type="search" placeholder="検索（単語/読み/意味/例文）" aria-label="検索" />
+        </div>
+        <button id="shuffleBtn" class="btn" title="カードをシャッフル">シャッフル</button>
+        <button id="openAllBtn" class="btn ghost" title="全て開く/閉じる">全て開く</button>
+        <button id="exportBtn" class="btn secondary" title="現在の並びをCSVエクスポート">CSV出力</button>
+      </div>
+    </div>
+
+    <div id="cards" class="cards" aria-live="polite" aria-busy="false">
+      <div class="empty">ここにカードが表示されます。上のエリアからExcel/CSVを読み込んでください。</div>
+    </div>
+  </div>
+
+  <div class="footer" role="contentinfo">
+    <div class="footer-inner">
+      <div id="stat" class="stat">0件</div>
+      <div class="row">
+        <span class="hint">列見出し 例：<code>単語, 読み, 意味, 例文</code>（順不同OK）</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---- 型定義メモ ----
+    /** @typedef {{単語?:string, 読み?:string, 意味?:string, 例文?:string}} Row */
+
+    // 状態
+    let rows = /** @type {Row[]} */([]);
+    let filtered = /** @type {Row[]} */([]);
+    let openedAll = false;
+
+    // 要素参照
+    const fileInput = document.getElementById('file');
+    const fileBtn   = document.getElementById('fileBtn');
+    const demoBtn   = document.getElementById('demoBtn');
+    const dropZone  = document.getElementById('drop');
+    const qInput    = document.getElementById('q');
+    const shuffleBtn= document.getElementById('shuffleBtn');
+    const openAllBtn= document.getElementById('openAllBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const cardsEl   = document.getElementById('cards');
+    const statEl    = document.getElementById('stat');
+
+    // ユーティリティ
+    const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
+
+    function setBusy(busy){
+      cardsEl.setAttribute('aria-busy', String(!!busy));
+    }
+
+    function normalizeHeader(h){
+      if(!h) return '';
+      const s = String(h).trim().replace(/[\s_]/g,'');
+      const map = {
+        '単語':'単語','ことば':'単語','語':'単語','word':'単語','単語名':'単語','用語':'単語','表現':'単語',
+        '読み':'読み','よみ':'読み','読み仮名':'読み','ふりがな':'読み','読み方':'読み','yomi':'読み','kana':'読み','よみがな':'読み',
+        '意味':'意味','いみ':'意味','definition':'意味','mean':'意味','意味・定義':'意味',
+        '例文':'例文','れいぶん':'例文','sentence':'例文','example':'例文','用例':'例文','例':'例文'
+      };
+      return map[s.toLowerCase?.() || s] || s;
+    }
+
+    function pickHeaders(rawHeaders){
+      const headers = rawHeaders.map(normalizeHeader);
+      // 必須：単語、意味（読み・例文は任意）
+      const idx = {
+        単語: headers.findIndex(h=>h==='単語'),
+        読み: headers.findIndex(h=>h==='読み'),
+        意味: headers.findIndex(h=>h==='意味'),
+        例文: headers.findIndex(h=>h==='例文'),
+      };
+      if(idx.単語<0 && idx.意味<0){
+        // どちらもない場合は、先頭を単語、2番目を意味と仮定
+        idx.単語 = 0; idx.意味 = 1; idx.読み = 2; idx.例文 = 3;
+      }
+      return idx;
+    }
+
+    function toRow(obj){
+      // オブジェクト→Rowに整形
+      const keys = Object.keys(obj);
+      const idx = pickHeaders(keys);
+      const out = {
+        単語: String(obj[keys[idx.単語]] ?? '').trim(),
+        読み: String(obj[keys[idx.読み]] ?? '').trim(),
+        意味: String(obj[keys[idx.意味]] ?? '').trim(),
+        例文: String(obj[keys[idx.例文]] ?? '').trim(),
+      };
+      // 空行は除外
+      if(!(out.単語 || out.意味 || out.例文)) return null;
+      return out;
+    }
+
+    function render(list){
+      cardsEl.innerHTML = '';
+      if(!list.length){
+        cardsEl.innerHTML = '<div class="empty">一致するカードがありません。検索条件を調整してください。</div>';
+      } else {
+        const frag = document.createDocumentFragment();
+        list.forEach((r,i)=>{
+          const d = document.createElement('details');
+          d.className = 'card';
+          // キーボード操作向けに開閉状態を保持
+          d.addEventListener('toggle', ()=>{
+            // no-op; 将来localStorage保存などに使える
+          });
+
+          const sum = document.createElement('summary');
+          sum.className = 'summary';
+          sum.innerHTML = `
+            <div>
+              <div class="word">${escapeHtml(r.単語 || '(単語未設定)')}</div>
+              <div class="yomi">${escapeHtml(r.読み || '')}</div>
+            </div>
+            <div class="meta">
+              <span class="pill">No.${i+1}</span>
+            </div>
+          `;
+
+          const content = document.createElement('div');
+          content.className = 'content';
+          content.innerHTML = `
+            <div>
+              <div class="label">意味</div>
+              <div class="text">${escapeHtml(r.意味 || '')}</div>
+            </div>
+            <div>
+              <div class="label">例文</div>
+              <div class="text">${escapeHtml(r.例文 || '')}</div>
+            </div>
+          `;
+
+          d.appendChild(sum);
+          d.appendChild(content);
+          frag.appendChild(d);
+        });
+        cardsEl.appendChild(frag);
+      }
+      statEl.textContent = `${list.length}件`;
+    }
+
+    function applyFilter(){
+      const q = qInput.value.trim().toLowerCase();
+      if(!q){ filtered = rows.slice(); render(filtered); return; }
+      const keys = ['単語','読み','意味','例文'];
+      filtered = rows.filter(r => keys.some(k => String(r[k]||'').toLowerCase().includes(q)));
+      render(filtered);
+    }
+
+    function shuffle(){
+      for(let i=filtered.length-1; i>0; i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [filtered[i], filtered[j]] = [filtered[j], filtered[i]];
+      }
+      render(filtered);
+      glow(shuffleBtn);
+    }
+
+    function openAll(){
+      const items = cardsEl.querySelectorAll('details.card');
+      openedAll = !openedAll;
+      items.forEach(el => { el.open = openedAll; });
+      openAllBtn.textContent = openedAll ? '全て閉じる' : '全て開く';
+      glow(openAllBtn);
+    }
+
+    function exportCSV(){
+      const header = ['単語','読み','意味','例文'];
+      const lines = [header.join(',')].concat(filtered.map(r=>header.map(k=>csvCell(r[k])).join(',')));
+      const blob = new Blob(["\ufeff"+lines.join('\n')], {type:'text/csv'}); // BOM付でExcel互換
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `words_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      glow(exportBtn);
+    }
+
+    function csvCell(v){
+      if(v==null) return '';
+      const s = String(v);
+      if(/[",\n]/.test(s)) return '"'+s.replace(/"/g,'""')+'"';
+      return s;
+    }
+
+    function escapeHtml(s){
+      return String(s)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+
+    function glow(el){
+      el.classList.add('glow');
+      setTimeout(()=>el.classList.remove('glow'), 350);
+    }
+
+    async function handleFile(file){
+      if(!file) return;
+      setBusy(true);
+      try{
+        const ext = file.name.split('.').pop().toLowerCase();
+        if(ext === 'csv'){
+          const text = await file.text();
+          rows = parseCSV(text);
+        } else {
+          // Excel: SheetJS で読み込み
+          if(typeof XLSX === 'undefined') throw new Error('Excelライブラリが読み込めませんでした。オフラインの場合はCSVでご利用ください。');
+          const data = await file.arrayBuffer();
+          const wb = XLSX.read(data, { type: 'array' });
+          const sheetName = wb.SheetNames[0];
+          const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+          rows = json.map(toRow).filter(Boolean);
+        }
+        filtered = rows.slice();
+        render(filtered);
+        qInput.value = '';
+      } catch(err){
+        console.error(err);
+        cardsEl.innerHTML = `<div class="empty">読み込みに失敗しました。<br>ヒント：<br>・1行目は見出し（例：単語, 読み, 意味, 例文）<br>・オフライン時はCSVで保存して読み込むと安定します。</div>`;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function parseCSV(text){
+      // 簡易CSVパーサ（ダブルクォート対応/BOM除去）
+      text = text.replace(/^\ufeff/, '');
+      const rows = [];
+      const re = /\s*("(?:[^"]|"")*"|[^,\n]*)(,|\n|$)/gy;
+      let m, line = [];
+      while((m = re.exec(text))){
+        let cell = m[1];
+        const sep = m[2];
+        if(cell.startsWith('"') && cell.endsWith('"')){
+          cell = cell.slice(1,-1).replace(/""/g,'"');
+        }
+        line.push(cell);
+        if(sep === '\n' || sep === ''){
+          rows.push(line);
+          line = [];
+        }
+      }
+      if(line.length) rows.push(line);
+      const headers = rows.shift() || [];
+      const idx = pickHeaders(headers);
+      return rows.map(r => ({
+        単語: String(r[idx.単語] ?? '').trim(),
+        読み: String(r[idx.読み] ?? '').trim(),
+        意味: String(r[idx.意味] ?? '').trim(),
+        例文: String(r[idx.例文] ?? '').trim(),
+      })).filter(r => r.単語 || r.意味 || r.例文);
+    }
+
+    // イベント登録
+    fileBtn.addEventListener('click', ()=> fileInput.click());
+    fileInput.addEventListener('change', e=> handleFile(fileInput.files?.[0] || null));
+
+    dropZone.addEventListener('dragover', e=>{ e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', ()=> dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e=>{
+      e.preventDefault(); dropZone.classList.remove('dragover');
+      const f = e.dataTransfer?.files?.[0];
+      handleFile(f);
+    });
+
+    qInput.addEventListener('input', applyFilter);
+    shuffleBtn.addEventListener('click', shuffle);
+    openAllBtn.addEventListener('click', openAll);
+    exportBtn.addEventListener('click', exportCSV);
+
+    demoBtn.addEventListener('click', ()=>{
+      const demo = [
+        { 単語:'朦朧', 読み:'もうろう', 意味:'ぼんやりとしてはっきりしない様子。意識や視界があいまいな状態。', 例文:'熱のせいで意識が朦朧としていた。' },
+        { 単語:'端正', 読み:'たんせい', 意味:'姿や顔立ちが整っていて美しいこと。', 例文:'彼は端正な顔立ちで知られている。' },
+        { 単語:'直截', 読み:'ちょくせつ', 意味:'遠回しでなくはっきり言うこと。', 例文:'彼女は直截に意見を述べた。' },
+        { 単語:'憧憬', 読み:'しょうけい', 意味:'あこがれ。強く心引かれること。', 例文:'大都市への憧憬を胸に上京した。' }
+      ];
+      rows = demo.slice();
+      filtered = rows.slice();
+      render(filtered);
+      qInput.value = '';
+      glow(demoBtn);
+    });
+
+    // 初期描画
+    render([]);
+  </script>
+</body>
+</html>
