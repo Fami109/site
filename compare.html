@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>文章比較アプリ（変更点のみ強調）</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e5e7eb; margin: 0; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 30px; }
+    .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 40px; margin-bottom: 20px; }
+    .box { background: #1e293b; padding: 20px; border-radius: 10px; border: 1px solid #334155; width: 480px; }
+    h3 { margin-top: 0; margin-bottom: 10px; }
+    textarea { width: 100%; height: 200px; background: #0b1220; color: white; border: 1px solid #475569; border-radius: 8px; padding: 10px; font-family: monospace; resize: vertical; margin-bottom: 10px; }
+    .buttons { display: flex; justify-content: space-between; }
+    button { padding: 8px 16px; border: none; border-radius: 6px; background: #3b82f6; color: white; cursor: pointer; font-size: 14px; }
+    button:hover { background: #2563eb; }
+    .secondary { background: #475569; }
+    .secondary:hover { background: #334155; }
+    .center { text-align: center; margin-top: 20px; }
+    .result { margin-top: 30px; background: #1e293b; border-radius: 10px; padding: 15px; border: 1px solid #334155; white-space: pre-wrap; }
+    .ins { color: #22c55e; font-weight: bold; text-decoration: underline; }
+    .del { color: #ef4444; font-weight: bold; text-decoration: line-through; }
+  </style>
+</head>
+<body>
+  <h1>文章比較アプリ（変更点のみ強調）</h1>
+
+  <div class="container">
+    <div class="box">
+      <h3>元の文章</h3>
+      <textarea id="text1" placeholder="ここに元の文章を貼り付け"></textarea>
+      <div class="buttons">
+        <button class="secondary" onclick="pasteText('text1')">貼り付け</button>
+        <button onclick="copyText('text1')">コピー</button>
+        <button class="secondary" onclick="clearText('text1')">クリア</button>
+      </div>
+    </div>
+
+    <div class="box">
+      <h3>修正版の文章</h3>
+      <textarea id="text2" placeholder="ここに修正版の文章を貼り付け"></textarea>
+      <div class="buttons">
+        <button class="secondary" onclick="pasteText('text2')">貼り付け</button>
+        <button onclick="copyText('text2')">コピー</button>
+        <button class="secondary" onclick="clearText('text2')">クリア</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="center">
+    <button id="compare">比較する</button>
+  </div>
+
+  <div id="result" class="result"></div>
+
+  <script>
+    function diffStrings(a, b) {
+      const aTokens = a.split('');
+      const bTokens = b.split('');
+      const dp = Array.from({length: aTokens.length + 1}, () => Array(bTokens.length + 1).fill(0));
+      for (let i = aTokens.length - 1; i >= 0; i--) {
+        for (let j = bTokens.length - 1; j >= 0; j--) {
+          dp[i][j] = aTokens[i] === bTokens[j] ? dp[i+1][j+1] + 1 : Math.max(dp[i+1][j], dp[i][j+1]);
+        }
+      }
+
+      let i = 0, j = 0, result = '';
+      while (i < aTokens.length && j < bTokens.length) {
+        if (aTokens[i] === bTokens[j]) {
+          result += aTokens[i];
+          i++; j++;
+        } else if (dp[i+1][j] >= dp[i][j+1]) {
+          result += `<span class='del'>${aTokens[i]}</span>`;
+          i++;
+        } else {
+          result += `<span class='ins'>${bTokens[j]}</span>`;
+          j++;
+        }
+      }
+      while (i < aTokens.length) result += `<span class='del'>${aTokens[i++]}</span>`;
+      while (j < bTokens.length) result += `<span class='ins'>${bTokens[j++]}</span>`;
+      return result;
+    }
+
+    document.getElementById('compare').addEventListener('click', () => {
+      const text1 = document.getElementById('text1').value;
+      const text2 = document.getElementById('text2').value;
+      const diff = diffStrings(text1, text2);
+      document.getElementById('result').innerHTML = diff;
+    });
+
+    async function copyText(id) {
+      const text = document.getElementById(id).value;
+      await navigator.clipboard.writeText(text);
+      alert('コピーしました');
+    }
+
+    async function pasteText(id) {
+      const text = await navigator.clipboard.readText();
+      document.getElementById(id).value = text;
+    }
+
+    function clearText(id) {
+      document.getElementById(id).value = '';
+    }
+  </script>
+</body>
+</html>
