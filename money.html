@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資産管理アプリ</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>資産管理</h1>
+        
+        <!-- 入力フォーム -->
+        <div class="input-form">
+            <input type="date" id="date" value="">
+            <input type="text" id="assetName" placeholder="資産名（例: 株A）">
+            <input type="number" id="amount" placeholder="金額" step="0.01">
+            <button id="addBtn">追加</button>
+        </div>
+
+        <!-- 合計表示 -->
+        <div class="total">
+            <h2>総資産: <span id="totalAmount">0</span> 円</h2>
+        </div>
+
+        <!-- グラフ -->
+        <canvas id="totalChart" width="400" height="200"></canvas>
+
+        <!-- 資産リスト -->
+        <div class="asset-list">
+            <h3>資産項目</h3>
+            <div id="assets"></div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
