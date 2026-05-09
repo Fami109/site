@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>東京路線マップ</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  display: flex; height: 100vh; overflow: hidden;
+  background: #0d0d14; color: #e8e4f0;
+}
+
+/* ══ サイドバー共通 ══ */
+.sidebar {
+  display: flex; flex-direction: column; overflow: hidden;
+  z-index: 200; transition: width 0.25s ease, min-width 0.25s ease;
+  flex-shrink: 0;
+}
+.sidebar.collapsed { width: 0 !important; min-width: 0 !important; border: none !important; }
+
+/* 開閉ボタン */
+.toggle-sidebar-btn {
+  position: fixed; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 48px;
+  background: #232838; border: 1px solid #3a4060;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: #7880a0; font-size: 10px; z-index: 500;
+  transition: background 0.15s, color 0.15s, left 0.25s ease, right 0.25s ease;
+  user-select: none;
+}
+.toggle-sidebar-btn:hover { background: #2e3650; color: #c8d0f0; }
+#toggle-left { border-radius: 0 5px 5px 0; border-left: none; }
+
+/* ══ 左サイドバー ══ */
+#sidebar-left {
+  width: 260px; min-width: 260px;
+  background: #181e2e; border-right: 1px solid #2a3048;
+}
+#sidebar-header { padding: 16px 16px 12px; border-bottom: 1px solid #2a3048; background: #111624; flex-shrink: 0; }
+#sidebar-header h1 { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; color: #e8ecff; margin-bottom: 2px; }
+#sidebar-header p  { font-size: 10px; color: #5a6280; }
+
+/* 検索エリア（左サイドバー内） */
+#search-area { padding: 12px 14px 10px; border-bottom: 1px solid #2a3048; flex-shrink: 0; }
+#search-area h2 { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #5a6280; margin-bottom: 8px; }
+#search-wrap { position: relative; margin-bottom: 7px; }
+#station-input {
+  width: 100%; padding: 7px 10px;
+  background: #1e2438; border: 1px solid #2e3858; border-radius: 6px;
+  color: #e8ecff; font-size: 12px; font-family: inherit; outline: none;
+  transition: border-color 0.15s;
+}
+#station-input:focus { border-color: #5060c0; }
+#station-input::placeholder { color: #3a4260; }
+#autocomplete-list {
+  position: absolute; top: calc(100% + 3px); left: 0; right: 0;
+  background: #1e2848; border: 1px solid #3a4868; border-radius: 6px;
+  max-height: 180px; overflow-y: auto; z-index: 400; display: none;
+}
+#autocomplete-list::-webkit-scrollbar { width: 3px; }
+#autocomplete-list::-webkit-scrollbar-thumb { background: #3a4868; border-radius: 2px; }
+.ac-item { padding: 6px 10px; font-size: 11px; color: #b0b8d8; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background 0.1s; }
+.ac-item:hover, .ac-item.selected { background: #283060; color: #e8ecff; }
+.ac-dots { display: flex; gap: 3px; flex-shrink: 0; flex-wrap: wrap; max-width: 36px; }
+.ac-dot  { width: 6px; height: 6px; border-radius: 50%; }
+#search-btn {
+  width: 100%; padding: 7px 0;
+  background: #1e2c58; border: 1px solid #3848a8; border-radius: 6px;
+  color: #8898e8; font-size: 11px; font-family: inherit; cursor: pointer;
+  transition: all 0.15s; letter-spacing: 0.04em;
+}
+#search-btn:hover:not(:disabled) { background: #283878; color: #c0ccff; border-color: #5068d8; }
+#search-btn:disabled { opacity: 0.3; cursor: default; }
+#search-result { display: none; padding: 8px 14px; border-bottom: 1px solid #2a3048; background: #141a2c; flex-shrink: 0; }
+#result-station-name { font-size: 12px; font-weight: 700; color: #e8ecff; margin-bottom: 5px; }
+#result-lines-list { display: flex; flex-direction: column; gap: 3px; }
+.result-line-tag { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 5px; background: #1e2848; font-size: 10px; color: #b0b8d8; }
+.result-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.result-badge { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 7px; font-weight: 900; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+
+.section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; color: #5a6280; padding: 10px 16px 6px; text-transform: uppercase; white-space: nowrap; }
+#lines-container { overflow-y: auto; flex: 1; padding-bottom: 10px; }
+#lines-container::-webkit-scrollbar { width: 3px; }
+#lines-container::-webkit-scrollbar-thumb { background: #2a3248; border-radius: 2px; }
+
+.line-item { display: flex; align-items: center; gap: 8px; padding: 7px 14px; cursor: pointer; transition: background 0.15s; user-select: none; white-space: nowrap; }
+.line-item:hover  { background: #1e2840; }
+.line-item.active { background: #222e4a; }
+
+/* line-dot を廃止してアイコンのみに */
+.line-badge {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 900; letter-spacing: -0.02em;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+  opacity: 0.45; transition: opacity 0.15s, box-shadow 0.15s;
+}
+.line-item.active .line-badge { opacity: 1; box-shadow: 0 0 8px var(--glow-color); }
+
+.line-name  { font-size: 12px; color: #9098b8; flex: 1; }
+.line-item.active .line-name  { color: #e8ecff; }
+.line-count { font-size: 10px; color: #3a4260; font-variant-numeric: tabular-nums; }
+.line-item.active .line-count { color: #6878a8; }
+
+.toggle-sw { width: 28px; height: 16px; background: #1e2438; border-radius: 8px; position: relative; flex-shrink: 0; transition: background 0.2s; border: 1px solid #2a3258; }
+.toggle-sw::after { content: ''; position: absolute; width: 10px; height: 10px; background: #3a4268; border-radius: 50%; top: 2px; left: 2px; transition: transform 0.2s, background 0.2s; }
+.line-item.active .toggle-sw { background: var(--toggle-color); border-color: transparent; }
+.line-item.active .toggle-sw::after { transform: translateX(12px); background: #fff; }
+
+#ctrl-bar { padding: 10px 14px; border-top: 1px solid #2a3048; display: flex; gap: 6px; flex-shrink: 0; }
+.ctrl-btn { flex: 1; padding: 6px 0; background: #1e2438; border: 1px solid #2e3858; border-radius: 6px; color: #6878a8; font-size: 11px; cursor: pointer; transition: all 0.15s; font-family: inherit; white-space: nowrap; }
+.ctrl-btn:hover { background: #28304e; color: #b0b8d8; border-color: #3a4868; }
+.section-divider { height: 1px; background: #222a3e; margin: 4px 14px; }
+
+/* ══ 中央カラム（地図＋下バー） ══ */
+#center-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* ══ 地図 ══ */
+#map { flex: 1; background: #1a1a2a; min-width: 0; min-height: 0; }
+.leaflet-container { background: #1a1a2a; }
+.leaflet-tile { filter: brightness(0.35) saturate(0.4) hue-rotate(200deg); }
+
+/* ══ 下バー ══ */
+#bottom-bar {
+  flex-shrink: 0; height: 72px;
+  background: #111624; border-top: 1px solid #2a3048;
+  display: none; flex-direction: column;
+  overflow: hidden; position: relative;
+}
+#bottom-bar.visible { display: flex; }
+
+/* タブ行 */
+#bb-tabs {
+  display: flex; gap: 0; height: 26px; flex-shrink: 0;
+  border-bottom: 1px solid #1e2438; overflow-x: auto; overflow-y: hidden;
+}
+#bb-tabs::-webkit-scrollbar { height: 0; }
+.bb-tab {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 10px; height: 100%; cursor: pointer;
+  font-size: 10px; color: #5a6280; white-space: nowrap;
+  border-right: 1px solid #1e2438; transition: background 0.12s, color 0.12s;
+  user-select: none; flex-shrink: 0;
+}
+.bb-tab:hover { background: #1a2038; color: #b0b8d8; }
+.bb-tab.active { background: #1e2848; color: #e8ecff; border-bottom: 2px solid var(--tab-color, #fff); }
+.bb-tab-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.bb-tab-close {
+  margin-left: 3px; width: 13px; height: 13px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; color: #3a4260; transition: background 0.1s, color 0.1s;
+}
+.bb-tab-close:hover { background: #3a4868; color: #e8ecff; }
+
+/* 駅リスト行 */
+#bb-station-row {
+  flex: 1; display: flex; align-items: center;
+  padding: 0 8px; overflow-x: auto; gap: 0;
+  scrollbar-width: none;
+}
+#bb-station-row::-webkit-scrollbar { height: 0; }
+
+.bb-arrow {
+  flex-shrink: 0; padding: 0 5px; font-size: 11px;
+  color: #2e3858; user-select: none; line-height: 1;
+}
+.bb-station {
+  flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+  padding: 0 5px; cursor: pointer; position: relative;
+}
+.bb-station:hover .bb-sname { color: #e8ecff; }
+.bb-sname {
+  font-size: 10px; color: #6878a8; white-space: nowrap;
+  transition: color 0.12s; margin-top: 3px;
+}
+.bb-sdot {
+  width: 7px; height: 7px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  transition: transform 0.12s;
+}
+.bb-station.highlighted .bb-sdot { transform: scale(1.5); box-shadow: 0 0 6px var(--line-color,#fff); }
+.bb-station.highlighted .bb-sname { color: #fff; font-weight: 700; }
+.bb-station.highlighted::after {
+  content: ''; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
+  width: calc(100% - 2px); height: 2px; border-radius: 1px;
+  background: var(--line-color, #fff);
+}
+.bb-conn { flex-shrink: 0; align-self: center; height: 2px; width: 16px; opacity: 0.4; margin-bottom: 13px; }
+
+.always-marker { background: transparent; border: none; box-shadow: none; }
+.always-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.5);
+  cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 0 3px rgba(0,0,0,0.8);
+}
+.always-dot:hover { transform: scale(1.8); box-shadow: 0 0 8px rgba(255,255,255,0.5); }
+/* 乗り換え駅 — ダイヤ形 */
+.always-dot.transfer {
+  width: 10px; height: 10px; border-radius: 2px;
+  transform: rotate(45deg); border: 2px solid rgba(255,255,255,0.8);
+  box-shadow: 0 0 5px rgba(255,255,255,0.3);
+}
+.always-dot.transfer:hover { transform: rotate(45deg) scale(1.7); box-shadow: 0 0 10px rgba(255,255,255,0.6); }
+
+/* 乗り換え候補ハイライト — 削除 */
+
+.station-label { background: transparent; border: none; box-shadow: none; font-family: 'Hiragino Sans','Noto Sans JP',sans-serif; }
+.station-label-inner { font-size: 10px; color: #f0ecff; white-space: nowrap; text-shadow: 0 0 4px #000, 0 1px 3px #000; padding: 1px 3px; }
+</style>
+</head>
+<body>
+
+<button class="toggle-sidebar-btn" id="toggle-left" onclick="toggleSidebar('left')" title="閉じる">◀</button>
+
+<div id="sidebar-left" class="sidebar">
+  <div id="sidebar-header">
+    <h1>東京路線マップ</h1>
+    <p>路線をオンにして停車駅を表示</p>
+  </div>
+
+  <div id="search-area">
+    <h2>駅名検索</h2>
+    <div id="search-wrap">
+      <input type="text" id="station-input" placeholder="例：新宿、渋谷、東京…" autocomplete="off" />
+      <div id="autocomplete-list"></div>
+    </div>
+    <button id="search-btn" disabled>この駅の路線をオンにする</button>
+  </div>
+  <div id="search-result">
+    <div id="result-station-name"></div>
+    <div id="result-lines-list"></div>
+  </div>
+
+  <div id="lines-container">
+    <div class="section-label">東京メトロ</div>
+    <div id="metro-lines"></div>
+    <div class="section-divider"></div>
+    <div class="section-label">都営地下鉄</div>
+    <div id="toei-lines"></div>
+    <div class="section-divider"></div>
+    <div class="section-label">JR・私鉄</div>
+    <div id="jr-lines"></div>
+    <div class="section-divider"></div>
+    <div class="section-label">東急電鉄</div>
+    <div id="tokyu-lines"></div>
+    <div class="section-divider"></div>
+    <div class="section-label">モノレール・新交通</div>
+    <div id="mono-lines"></div>
+  </div>
+  <div id="ctrl-bar">
+    <button class="ctrl-btn" onclick="toggleAll(true)">すべてオン</button>
+    <button class="ctrl-btn" onclick="toggleAll(false)">すべてオフ</button>
+  </div>
+</div>
+
+<div id="center-col">
+  <div id="map"></div>
+  <div id="bottom-bar">
+    <div id="bb-tabs"></div>
+    <div id="bb-station-row"></div>
+  </div>
+</div>
+
+
+
+<script>
+const LINE_ICONS = {
+  ginza:'G', marunouchi:'M', hibiya:'H', tozai:'T', chiyoda:'C',
+  yurakucho:'Y', hanzomon:'Z', namboku:'N', fukutoshin:'F',
+  asakusa:'A', mita:'I', shinjuku:'S', oedo:'E',
+  yamanote:'JY', chuo:'JC', keihin:'JK', sobu:'JS',
+  tokyu_toyoko:'TY', tokyu_meguro:'MG', tokyu_den_en_toshi:'DT',
+  tokyu_oimachi:'OM', tokyu_ikegami:'IK', tokyu_tamagawa:'TM',
+  monorail:'MO', yurikamome:'YK', rinkai:'RI'
+};
+
+const LINES = {
+  metro:[
+    {id:'ginza',name:'銀座線',color:'#FF9500',stations:[
+      {name:'渋谷',lat:35.6580,lng:139.7016},{name:'表参道',lat:35.6652,lng:139.7124},
+      {name:'外苑前',lat:35.6702,lng:139.7165},{name:'青山一丁目',lat:35.6724,lng:139.7163},
+      {name:'赤坂見附',lat:35.6748,lng:139.7365},{name:'溜池山王',lat:35.6743,lng:139.7396},
+      {name:'虎ノ門',lat:35.6677,lng:139.7493},{name:'新橋',lat:35.6642,lng:139.7575},
+      {name:'銀座',lat:35.6719,lng:139.7647},{name:'京橋',lat:35.6749,lng:139.7697},
+      {name:'日本橋',lat:35.6823,lng:139.7740},{name:'三越前',lat:35.6844,lng:139.7742},
+      {name:'神田',lat:35.6915,lng:139.7711},{name:'末広町',lat:35.6973,lng:139.7741},
+      {name:'上野広小路',lat:35.7084,lng:139.7735},{name:'上野',lat:35.7125,lng:139.7770},
+      {name:'稲荷町',lat:35.7147,lng:139.7817},{name:'田原町',lat:35.7106,lng:139.7895},
+      {name:'浅草',lat:35.7109,lng:139.7962}
+    ]},
+    {id:'marunouchi',name:'丸ノ内線',color:'#E60026',stations:[
+      {name:'荻窪',lat:35.7059,lng:139.6245},{name:'南阿佐ケ谷',lat:35.7041,lng:139.6369},
+      {name:'新高円寺',lat:35.7057,lng:139.6487},{name:'東高円寺',lat:35.7010,lng:139.6588},
+      {name:'新中野',lat:35.6998,lng:139.6684},{name:'中野坂上',lat:35.7014,lng:139.6784},
+      {name:'西新宿',lat:35.6920,lng:139.6938},{name:'新宿',lat:35.6896,lng:139.7006},
+      {name:'新宿三丁目',lat:35.6908,lng:139.7064},{name:'新宿御苑前',lat:35.6865,lng:139.7108},
+      {name:'四谷三丁目',lat:35.6828,lng:139.7213},{name:'四ツ谷',lat:35.6842,lng:139.7306},
+      {name:'赤坂見附',lat:35.6748,lng:139.7365},{name:'国会議事堂前',lat:35.6727,lng:139.7432},
+      {name:'霞ケ関',lat:35.6736,lng:139.7499},{name:'銀座',lat:35.6719,lng:139.7647},
+      {name:'東京',lat:35.6812,lng:139.7671},{name:'大手町',lat:35.6845,lng:139.7631},
+      {name:'淡路町',lat:35.6943,lng:139.7638},{name:'御茶ノ水',lat:35.6994,lng:139.7653},
+      {name:'本郷三丁目',lat:35.7079,lng:139.7619},{name:'後楽園',lat:35.7073,lng:139.7523},
+      {name:'茗荷谷',lat:35.7202,lng:139.7274},{name:'新大塚',lat:35.7249,lng:139.7247},
+      {name:'池袋',lat:35.7295,lng:139.7109}
+    ]},
+    {id:'hibiya',name:'日比谷線',color:'#9B7CB6',stations:[
+      {name:'中目黒',lat:35.6443,lng:139.6984},{name:'恵比寿',lat:35.6476,lng:139.7098},
+      {name:'広尾',lat:35.6497,lng:139.7198},{name:'六本木',lat:35.6604,lng:139.7293},
+      {name:'神谷町',lat:35.6672,lng:139.7429},{name:'霞ケ関',lat:35.6736,lng:139.7499},
+      {name:'日比谷',lat:35.6739,lng:139.7598},{name:'銀座',lat:35.6719,lng:139.7647},
+      {name:'東銀座',lat:35.6694,lng:139.7690},{name:'築地',lat:35.6659,lng:139.7738},
+      {name:'八丁堀',lat:35.6730,lng:139.7790},{name:'茅場町',lat:35.6803,lng:139.7800},
+      {name:'人形町',lat:35.6855,lng:139.7830},{name:'小伝馬町',lat:35.6923,lng:139.7806},
+      {name:'秋葉原',lat:35.6983,lng:139.7731},{name:'仲御徒町',lat:35.7082,lng:139.7756},
+      {name:'上野',lat:35.7125,lng:139.7770},{name:'入谷',lat:35.7210,lng:139.7843},
+      {name:'三ノ輪',lat:35.7272,lng:139.7887},{name:'南千住',lat:35.7370,lng:139.7960},
+      {name:'北千住',lat:35.7483,lng:139.8048}
+    ]},
+    {id:'tozai',name:'東西線',color:'#009BBF',stations:[
+      {name:'中野',lat:35.7079,lng:139.6658},{name:'落合',lat:35.7089,lng:139.6836},
+      {name:'高田馬場',lat:35.7126,lng:139.7038},{name:'早稲田',lat:35.7084,lng:139.7198},
+      {name:'神楽坂',lat:35.7038,lng:139.7377},{name:'飯田橋',lat:35.7022,lng:139.7476},
+      {name:'九段下',lat:35.6958,lng:139.7512},{name:'竹橋',lat:35.6889,lng:139.7582},
+      {name:'大手町',lat:35.6845,lng:139.7631},{name:'日本橋',lat:35.6823,lng:139.7740},
+      {name:'茅場町',lat:35.6803,lng:139.7800},{name:'門前仲町',lat:35.6720,lng:139.7950},
+      {name:'木場',lat:35.6706,lng:139.8096},{name:'東陽町',lat:35.6705,lng:139.8202},
+      {name:'南砂町',lat:35.6691,lng:139.8369},{name:'西葛西',lat:35.6671,lng:139.8625},
+      {name:'葛西',lat:35.6671,lng:139.8740},{name:'浦安',lat:35.6764,lng:139.9002},
+      {name:'南行徳',lat:35.6772,lng:139.9167},{name:'行徳',lat:35.6773,lng:139.9282},
+      {name:'妙典',lat:35.6773,lng:139.9400},{name:'原木中山',lat:35.6818,lng:139.9558},
+      {name:'西船橋',lat:35.7038,lng:139.9842}
+    ]},
+    {id:'chiyoda',name:'千代田線',color:'#00BB85',stations:[
+      {name:'代々木上原',lat:35.6631,lng:139.6825},{name:'代々木公園',lat:35.6682,lng:139.6931},
+      {name:'明治神宮前',lat:35.6710,lng:139.7025},{name:'表参道',lat:35.6652,lng:139.7124},
+      {name:'乃木坂',lat:35.6654,lng:139.7244},{name:'赤坂',lat:35.6773,lng:139.7361},
+      {name:'国会議事堂前',lat:35.6727,lng:139.7432},{name:'霞ケ関',lat:35.6736,lng:139.7499},
+      {name:'日比谷',lat:35.6739,lng:139.7598},{name:'二重橋前',lat:35.6812,lng:139.7616},
+      {name:'大手町',lat:35.6845,lng:139.7631},{name:'新御茶ノ水',lat:35.6994,lng:139.7653},
+      {name:'湯島',lat:35.7078,lng:139.7648},{name:'根津',lat:35.7198,lng:139.7623},
+      {name:'千駄木',lat:35.7273,lng:139.7607},{name:'西日暮里',lat:35.7320,lng:139.7677},
+      {name:'町屋',lat:35.7373,lng:139.7802},{name:'北千住',lat:35.7483,lng:139.8048}
+    ]},
+    {id:'yurakucho',name:'有楽町線',color:'#C1A000',stations:[
+      {name:'和光市',lat:35.7826,lng:139.6059},{name:'地下鉄成増',lat:35.7720,lng:139.6209},
+      {name:'地下鉄赤塚',lat:35.7681,lng:139.6313},{name:'平和台',lat:35.7693,lng:139.6427},
+      {name:'氷川台',lat:35.7607,lng:139.6555},{name:'小竹向原',lat:35.7477,lng:139.6665},
+      {name:'千川',lat:35.7425,lng:139.6766},{name:'要町',lat:35.7380,lng:139.6893},
+      {name:'池袋',lat:35.7295,lng:139.7109},{name:'東池袋',lat:35.7267,lng:139.7206},
+      {name:'護国寺',lat:35.7201,lng:139.7320},{name:'江戸川橋',lat:35.7098,lng:139.7411},
+      {name:'飯田橋',lat:35.7022,lng:139.7476},{name:'市ケ谷',lat:35.6933,lng:139.7372},
+      {name:'麹町',lat:35.6849,lng:139.7339},{name:'永田町',lat:35.6759,lng:139.7430},
+      {name:'桜田門',lat:35.6751,lng:139.7529},{name:'有楽町',lat:35.6749,lng:139.7629},
+      {name:'銀座一丁目',lat:35.6730,lng:139.7679},{name:'新富町',lat:35.6694,lng:139.7740},
+      {name:'月島',lat:35.6657,lng:139.7847},{name:'豊洲',lat:35.6554,lng:139.7957},
+      {name:'辰巳',lat:35.6470,lng:139.8078},{name:'新木場',lat:35.6432,lng:139.8213}
+    ]},
+    {id:'hanzomon',name:'半蔵門線',color:'#8F76D6',stations:[
+      {name:'渋谷',lat:35.6580,lng:139.7016},{name:'表参道',lat:35.6652,lng:139.7124},
+      {name:'青山一丁目',lat:35.6724,lng:139.7163},{name:'永田町',lat:35.6759,lng:139.7430},
+      {name:'半蔵門',lat:35.6820,lng:139.7487},{name:'九段下',lat:35.6958,lng:139.7512},
+      {name:'神保町',lat:35.6959,lng:139.7576},{name:'大手町',lat:35.6845,lng:139.7631},
+      {name:'三越前',lat:35.6844,lng:139.7742},{name:'水天宮前',lat:35.6820,lng:139.7834},
+      {name:'清澄白河',lat:35.6782,lng:139.7975},{name:'住吉',lat:35.6832,lng:139.8145},
+      {name:'錦糸町',lat:35.6963,lng:139.8154},{name:'押上',lat:35.7101,lng:139.8124}
+    ]},
+    {id:'namboku',name:'南北線',color:'#00AC9B',stations:[
+      {name:'目黒',lat:35.6330,lng:139.7156},{name:'白金台',lat:35.6392,lng:139.7247},
+      {name:'白金高輪',lat:35.6402,lng:139.7300},{name:'麻布十番',lat:35.6556,lng:139.7372},
+      {name:'六本木一丁目',lat:35.6637,lng:139.7374},{name:'溜池山王',lat:35.6743,lng:139.7396},
+      {name:'永田町',lat:35.6759,lng:139.7430},{name:'四ツ谷',lat:35.6842,lng:139.7306},
+      {name:'市ケ谷',lat:35.6933,lng:139.7372},{name:'飯田橋',lat:35.7022,lng:139.7476},
+      {name:'後楽園',lat:35.7073,lng:139.7523},{name:'東大前',lat:35.7200,lng:139.7568},
+      {name:'本駒込',lat:35.7258,lng:139.7491},{name:'駒込',lat:35.7360,lng:139.7485},
+      {name:'西ケ原',lat:35.7435,lng:139.7465},{name:'王子',lat:35.7518,lng:139.7363},
+      {name:'王子神谷',lat:35.7596,lng:139.7271},{name:'志茂',lat:35.7668,lng:139.7213},
+      {name:'赤羽岩淵',lat:35.7756,lng:139.7194}
+    ]},
+    {id:'fukutoshin',name:'副都心線',color:'#9C5E31',stations:[
+      {name:'和光市',lat:35.7826,lng:139.6059},{name:'地下鉄成増',lat:35.7720,lng:139.6209},
+      {name:'地下鉄赤塚',lat:35.7681,lng:139.6313},{name:'平和台',lat:35.7693,lng:139.6427},
+      {name:'氷川台',lat:35.7607,lng:139.6555},{name:'小竹向原',lat:35.7477,lng:139.6665},
+      {name:'千川',lat:35.7425,lng:139.6766},{name:'要町',lat:35.7380,lng:139.6893},
+      {name:'池袋',lat:35.7295,lng:139.7109},{name:'雑司が谷',lat:35.7215,lng:139.7185},
+      {name:'西早稲田',lat:35.7083,lng:139.7175},{name:'東新宿',lat:35.6973,lng:139.7073},
+      {name:'新宿三丁目',lat:35.6908,lng:139.7064},{name:'北参道',lat:35.6733,lng:139.7041},
+      {name:'明治神宮前',lat:35.6710,lng:139.7025},{name:'渋谷',lat:35.6580,lng:139.7016}
+    ]}
+  ],
+  toei:[
+    {id:'asakusa',name:'都営浅草線',color:'#E85298',stations:[
+      {name:'西馬込',lat:35.5783,lng:139.7048},{name:'馬込',lat:35.5936,lng:139.7062},
+      {name:'中延',lat:35.6064,lng:139.7121},{name:'戸越',lat:35.6135,lng:139.7172},
+      {name:'五反田',lat:35.6262,lng:139.7235},{name:'大崎広小路',lat:35.6298,lng:139.7265},
+      {name:'泉岳寺',lat:35.6370,lng:139.7316},{name:'三田',lat:35.6463,lng:139.7413},
+      {name:'大門',lat:35.6572,lng:139.7540},{name:'新橋',lat:35.6642,lng:139.7575},
+      {name:'東銀座',lat:35.6694,lng:139.7690},{name:'宝町',lat:35.6749,lng:139.7741},
+      {name:'日本橋',lat:35.6823,lng:139.7740},{name:'人形町',lat:35.6855,lng:139.7830},
+      {name:'東日本橋',lat:35.6892,lng:139.7853},{name:'浅草橋',lat:35.6974,lng:139.7919},
+      {name:'蔵前',lat:35.7061,lng:139.7925},{name:'浅草',lat:35.7109,lng:139.7962},
+      {name:'本所吾妻橋',lat:35.7078,lng:139.8075},{name:'押上',lat:35.7101,lng:139.8124}
+    ]},
+    {id:'mita',name:'都営三田線',color:'#0079C2',stations:[
+      {name:'目黒',lat:35.6330,lng:139.7156},{name:'白金台',lat:35.6392,lng:139.7247},
+      {name:'白金高輪',lat:35.6402,lng:139.7300},{name:'三田',lat:35.6463,lng:139.7413},
+      {name:'芝公園',lat:35.6569,lng:139.7504},{name:'御成門',lat:35.6596,lng:139.7517},
+      {name:'内幸町',lat:35.6706,lng:139.7554},{name:'日比谷',lat:35.6739,lng:139.7598},
+      {name:'大手町',lat:35.6845,lng:139.7631},{name:'神保町',lat:35.6959,lng:139.7576},
+      {name:'水道橋',lat:35.7016,lng:139.7538},{name:'春日',lat:35.7073,lng:139.7523},
+      {name:'白山',lat:35.7207,lng:139.7530},{name:'千石',lat:35.7316,lng:139.7530},
+      {name:'巣鴨',lat:35.7375,lng:139.7393},{name:'西巣鴨',lat:35.7467,lng:139.7253},
+      {name:'新板橋',lat:35.7537,lng:139.7177},{name:'板橋区役所前',lat:35.7622,lng:139.7096},
+      {name:'板橋本町',lat:35.7686,lng:139.7082},{name:'本蓮沼',lat:35.7760,lng:139.7072},
+      {name:'志村坂上',lat:35.7823,lng:139.6965},{name:'志村三丁目',lat:35.7863,lng:139.6882},
+      {name:'蓮根',lat:35.7913,lng:139.6830},{name:'西台',lat:35.7954,lng:139.6710},
+      {name:'高島平',lat:35.7940,lng:139.6601},{name:'新高島平',lat:35.7929,lng:139.6496},
+      {name:'西高島平',lat:35.7936,lng:139.6387}
+    ]},
+    {id:'shinjuku',name:'都営新宿線',color:'#6CBB5A',stations:[
+      {name:'新宿',lat:35.6896,lng:139.7006},{name:'新宿三丁目',lat:35.6908,lng:139.7064},
+      {name:'曙橋',lat:35.6880,lng:139.7213},{name:'市ケ谷',lat:35.6933,lng:139.7372},
+      {name:'九段下',lat:35.6958,lng:139.7512},{name:'神保町',lat:35.6959,lng:139.7576},
+      {name:'小川町',lat:35.6955,lng:139.7652},{name:'岩本町',lat:35.6918,lng:139.7753},
+      {name:'馬喰横山',lat:35.6892,lng:139.7853},{name:'東大島',lat:35.6851,lng:139.8245},
+      {name:'大島',lat:35.6969,lng:139.8267},{name:'西大島',lat:35.6966,lng:139.8139},
+      {name:'住吉',lat:35.6832,lng:139.8145},{name:'瑞江',lat:35.7019,lng:139.8756},
+      {name:'篠崎',lat:35.7087,lng:139.8895},{name:'本八幡',lat:35.7224,lng:139.9280}
+    ]},
+    {id:'oedo',name:'都営大江戸線',color:'#B6007A',stations:[
+      {name:'都庁前',lat:35.6902,lng:139.6921},{name:'新宿西口',lat:35.6937,lng:139.6971},
+      {name:'東新宿',lat:35.6973,lng:139.7073},{name:'若松河田',lat:35.7023,lng:139.7119},
+      {name:'牛込柳町',lat:35.7048,lng:139.7297},{name:'牛込神楽坂',lat:35.7055,lng:139.7384},
+      {name:'飯田橋',lat:35.7022,lng:139.7476},{name:'春日',lat:35.7073,lng:139.7523},
+      {name:'本郷三丁目',lat:35.7079,lng:139.7619},{name:'上野御徒町',lat:35.7108,lng:139.7742},
+      {name:'新御徒町',lat:35.7119,lng:139.7842},{name:'蔵前',lat:35.7061,lng:139.7925},
+      {name:'両国',lat:35.6963,lng:139.7938},{name:'森下',lat:35.6869,lng:139.8003},
+      {name:'清澄白河',lat:35.6782,lng:139.7975},{name:'門前仲町',lat:35.6720,lng:139.7950},
+      {name:'月島',lat:35.6657,lng:139.7847},{name:'勝どき',lat:35.6575,lng:139.7755},
+      {name:'築地市場',lat:35.6615,lng:139.7728},{name:'汐留',lat:35.6572,lng:139.7575},
+      {name:'大門',lat:35.6572,lng:139.7540},{name:'赤羽橋',lat:35.6509,lng:139.7430},
+      {name:'麻布十番',lat:35.6556,lng:139.7372},{name:'六本木',lat:35.6604,lng:139.7293},
+      {name:'青山一丁目',lat:35.6724,lng:139.7163},{name:'国立競技場',lat:35.6782,lng:139.7147},
+      {name:'代々木',lat:35.6833,lng:139.7023},{name:'新宿',lat:35.6896,lng:139.7006},
+      {name:'西新宿五丁目',lat:35.6946,lng:139.6887},{name:'中野坂上',lat:35.7014,lng:139.6784},
+      {name:'東中野',lat:35.7085,lng:139.6684},{name:'中井',lat:35.7147,lng:139.6721},
+      {name:'落合南長崎',lat:35.7186,lng:139.6817},{name:'新江古田',lat:35.7275,lng:139.6725},
+      {name:'練馬',lat:35.7355,lng:139.6528},{name:'豊島園',lat:35.7355,lng:139.6425},
+      {name:'練馬春日町',lat:35.7433,lng:139.6393},{name:'光が丘',lat:35.7576,lng:139.6269}
+    ]}
+  ],
+  jr:[
+    {id:'yamanote',name:'JR山手線',color:'#9acd32',stations:[
+      {name:'品川',lat:35.6284,lng:139.7387},{name:'高輪ゲートウェイ',lat:35.6353,lng:139.7400},
+      {name:'田町',lat:35.6454,lng:139.7479},{name:'浜松町',lat:35.6558,lng:139.7572},
+      {name:'新橋',lat:35.6642,lng:139.7575},{name:'有楽町',lat:35.6749,lng:139.7629},
+      {name:'東京',lat:35.6812,lng:139.7671},{name:'神田',lat:35.6915,lng:139.7711},
+      {name:'秋葉原',lat:35.6983,lng:139.7731},{name:'御徒町',lat:35.7073,lng:139.7743},
+      {name:'上野',lat:35.7125,lng:139.7770},{name:'鶯谷',lat:35.7208,lng:139.7786},
+      {name:'日暮里',lat:35.7276,lng:139.7706},{name:'西日暮里',lat:35.7320,lng:139.7677},
+      {name:'田端',lat:35.7378,lng:139.7618},{name:'駒込',lat:35.7360,lng:139.7485},
+      {name:'巣鴨',lat:35.7375,lng:139.7393},{name:'大塚',lat:35.7312,lng:139.7282},
+      {name:'池袋',lat:35.7295,lng:139.7109},{name:'目白',lat:35.7217,lng:139.7065},
+      {name:'高田馬場',lat:35.7126,lng:139.7038},{name:'新大久保',lat:35.7012,lng:139.7004},
+      {name:'新宿',lat:35.6896,lng:139.7006},{name:'代々木',lat:35.6833,lng:139.7023},
+      {name:'原宿',lat:35.6702,lng:139.7021},{name:'渋谷',lat:35.6580,lng:139.7016},
+      {name:'恵比寿',lat:35.6476,lng:139.7098},{name:'目黒',lat:35.6330,lng:139.7156},
+      {name:'五反田',lat:35.6262,lng:139.7235},{name:'大崎',lat:35.6197,lng:139.7283}
+    ]},
+    {id:'chuo',name:'JR中央線（快速）',color:'#F15A22',stations:[
+      {name:'東京',lat:35.6812,lng:139.7671},{name:'神田',lat:35.6915,lng:139.7711},
+      {name:'御茶ノ水',lat:35.6994,lng:139.7653},{name:'四ツ谷',lat:35.6842,lng:139.7306},
+      {name:'新宿',lat:35.6896,lng:139.7006},{name:'中野',lat:35.7079,lng:139.6658},
+      {name:'高円寺',lat:35.7059,lng:139.6496},{name:'阿佐ヶ谷',lat:35.7059,lng:139.6369},
+      {name:'荻窪',lat:35.7059,lng:139.6245},{name:'西荻窪',lat:35.7059,lng:139.6043},
+      {name:'吉祥寺',lat:35.7027,lng:139.5795},{name:'三鷹',lat:35.7012,lng:139.5639},
+      {name:'武蔵境',lat:35.7066,lng:139.5432},{name:'東小金井',lat:35.7013,lng:139.5268},
+      {name:'武蔵小金井',lat:35.6984,lng:139.5049},{name:'国分寺',lat:35.6997,lng:139.4851},
+      {name:'西国分寺',lat:35.6970,lng:139.4674},{name:'国立',lat:35.6906,lng:139.4493},
+      {name:'立川',lat:35.6977,lng:139.4133}
+    ]},
+    {id:'keihin',name:'JR京浜東北線',color:'#00BFFF',stations:[
+      {name:'上野',lat:35.7125,lng:139.7770},{name:'御徒町',lat:35.7073,lng:139.7743},
+      {name:'秋葉原',lat:35.6983,lng:139.7731},{name:'神田',lat:35.6915,lng:139.7711},
+      {name:'東京',lat:35.6812,lng:139.7671},{name:'有楽町',lat:35.6749,lng:139.7629},
+      {name:'新橋',lat:35.6642,lng:139.7575},{name:'浜松町',lat:35.6558,lng:139.7572},
+      {name:'田町',lat:35.6454,lng:139.7479},{name:'高輪ゲートウェイ',lat:35.6353,lng:139.7400},
+      {name:'品川',lat:35.6284,lng:139.7387},{name:'大井町',lat:35.6006,lng:139.7286},
+      {name:'大森',lat:35.5830,lng:139.7162},{name:'蒲田',lat:35.5636,lng:139.7163}
+    ]},
+    {id:'sobu',name:'JR総武線（各停）',color:'#FFD700',stations:[
+      {name:'千葉',lat:35.6137,lng:140.1132},{name:'西船橋',lat:35.7038,lng:139.9842},
+      {name:'船橋',lat:35.6998,lng:139.9836},{name:'錦糸町',lat:35.6963,lng:139.8154},
+      {name:'両国',lat:35.6963,lng:139.7938},{name:'浅草橋',lat:35.6974,lng:139.7919},
+      {name:'秋葉原',lat:35.6983,lng:139.7731},{name:'御茶ノ水',lat:35.6994,lng:139.7653},
+      {name:'水道橋',lat:35.7016,lng:139.7538},{name:'飯田橋',lat:35.7022,lng:139.7476},
+      {name:'市ケ谷',lat:35.6933,lng:139.7372},{name:'四ツ谷',lat:35.6842,lng:139.7306},
+      {name:'信濃町',lat:35.6809,lng:139.7197},{name:'千駄ケ谷',lat:35.6771,lng:139.7124},
+      {name:'代々木',lat:35.6833,lng:139.7023},{name:'新宿',lat:35.6896,lng:139.7006},
+      {name:'大久保',lat:35.6989,lng:139.6984},{name:'東中野',lat:35.7085,lng:139.6684},
+      {name:'中野',lat:35.7079,lng:139.6658}
+    ]}
+  ]
+};
+
+/* 東急電鉄 */
+const TOKYU_LINES = [
+  {id:'tokyu_toyoko',name:'東急東横線',color:'#E4001B',stations:[
+    {name:'渋谷',lat:35.6580,lng:139.7016},
+    {name:'代官山',lat:35.6486,lng:139.7028},
+    {name:'中目黒',lat:35.6443,lng:139.6984},
+    {name:'祐天寺',lat:35.6345,lng:139.6978},
+    {name:'学芸大学',lat:35.6246,lng:139.6854},
+    {name:'都立大学',lat:35.6143,lng:139.6812},
+    {name:'自由が丘',lat:35.6075,lng:139.6682},
+    {name:'田園調布',lat:35.5998,lng:139.6601},
+    {name:'多摩川',lat:35.5752,lng:139.6590},
+    {name:'新丸子',lat:35.5713,lng:139.6580},
+    {name:'武蔵小杉',lat:35.5754,lng:139.6561},
+    {name:'元住吉',lat:35.5735,lng:139.6449},
+    {name:'日吉',lat:35.5642,lng:139.6361},
+    {name:'綱島',lat:35.5364,lng:139.6272},
+    {name:'大倉山',lat:35.5270,lng:139.6221},
+    {name:'菊名',lat:35.5179,lng:139.6280},
+    {name:'妙蓮寺',lat:35.5115,lng:139.6329},
+    {name:'白楽',lat:35.5060,lng:139.6260},
+    {name:'東白楽',lat:35.4982,lng:139.6198},
+    {name:'反町',lat:35.4861,lng:139.6228},
+    {name:'横浜',lat:35.4658,lng:139.6225}
+  ]},
+  {id:'tokyu_meguro',name:'東急目黒線',color:'#00A7DB',stations:[
+    {name:'目黒',lat:35.6330,lng:139.7156},
+    {name:'不動前',lat:35.6259,lng:139.7133},
+    {name:'武蔵小山',lat:35.6192,lng:139.7172},
+    {name:'西小山',lat:35.6131,lng:139.7083},
+    {name:'洗足',lat:35.6069,lng:139.7002},
+    {name:'大岡山',lat:35.6021,lng:139.6875},
+    {name:'奥沢',lat:35.5974,lng:139.6779},
+    {name:'田園調布',lat:35.5998,lng:139.6601},
+    {name:'多摩川',lat:35.5752,lng:139.6590},
+    {name:'新丸子',lat:35.5713,lng:139.6580},
+    {name:'武蔵小杉',lat:35.5754,lng:139.6561},
+    {name:'元住吉',lat:35.5735,lng:139.6449},
+    {name:'日吉',lat:35.5642,lng:139.6361}
+  ]},
+  {id:'tokyu_den_en_toshi',name:'東急田園都市線',color:'#009944',stations:[
+    {name:'渋谷',lat:35.6580,lng:139.7016},
+    {name:'池尻大橋',lat:35.6519,lng:139.6930},
+    {name:'三軒茶屋',lat:35.6437,lng:139.6696},
+    {name:'駒沢大学',lat:35.6303,lng:139.6660},
+    {name:'桜新町',lat:35.6200,lng:139.6557},
+    {name:'用賀',lat:35.6136,lng:139.6383},
+    {name:'二子玉川',lat:35.6088,lng:139.6267},
+    {name:'二子新地',lat:35.5965,lng:139.5986},
+    {name:'高津',lat:35.5895,lng:139.5924},
+    {name:'溝の口',lat:35.5823,lng:139.5836},
+    {name:'梶が谷',lat:35.5798,lng:139.5692},
+    {name:'宮崎台',lat:35.5750,lng:139.5497},
+    {name:'宮前平',lat:35.5703,lng:139.5350},
+    {name:'鷺沼',lat:35.5701,lng:139.5205},
+    {name:'たまプラーザ',lat:35.5683,lng:139.5068},
+    {name:'あざみ野',lat:35.5619,lng:139.4965},
+    {name:'江田',lat:35.5549,lng:139.4929},
+    {name:'市が尾',lat:35.5462,lng:139.4937},
+    {name:'藤が丘',lat:35.5387,lng:139.5001},
+    {name:'青葉台',lat:35.5329,lng:139.5143},
+    {name:'田奈',lat:35.5247,lng:139.5300},
+    {name:'長津田',lat:35.5284,lng:139.4903}
+  ]},
+  {id:'tokyu_oimachi',name:'東急大井町線',color:'#F39700',stations:[
+    {name:'大井町',lat:35.6006,lng:139.7286},
+    {name:'下神明',lat:35.6062,lng:139.7290},
+    {name:'戸越公園',lat:35.6107,lng:139.7214},
+    {name:'中延',lat:35.6064,lng:139.7121},
+    {name:'荏原町',lat:35.6019,lng:139.7049},
+    {name:'旗の台',lat:35.5960,lng:139.7008},
+    {name:'北千束',lat:35.5940,lng:139.6957},
+    {name:'大岡山',lat:35.6021,lng:139.6875},
+    {name:'緑が丘',lat:35.6064,lng:139.6780},
+    {name:'自由が丘',lat:35.6075,lng:139.6682},
+    {name:'九品仏',lat:35.6031,lng:139.6590},
+    {name:'尾山台',lat:35.6020,lng:139.6505},
+    {name:'等々力',lat:35.6013,lng:139.6393},
+    {name:'上野毛',lat:35.6013,lng:139.6295},
+    {name:'二子玉川',lat:35.6088,lng:139.6267},
+    {name:'溝の口',lat:35.5823,lng:139.5836}
+  ]},
+  {id:'tokyu_ikegami',name:'東急池上線',color:'#BB641D',stations:[
+    {name:'五反田',lat:35.6262,lng:139.7235},
+    {name:'大崎広小路',lat:35.6298,lng:139.7265},
+    {name:'戸越銀座',lat:35.6101,lng:139.7184},
+    {name:'荏原中延',lat:35.6039,lng:139.7089},
+    {name:'旗の台',lat:35.5960,lng:139.7008},
+    {name:'長原',lat:35.5921,lng:139.6940},
+    {name:'洗足池',lat:35.5871,lng:139.6906},
+    {name:'石川台',lat:35.5831,lng:139.6867},
+    {name:'雪が谷大塚',lat:35.5798,lng:139.6753},
+    {name:'御嶽山',lat:35.5731,lng:139.6710},
+    {name:'久が原',lat:35.5651,lng:139.6782},
+    {name:'千鳥町',lat:35.5601,lng:139.6811},
+    {name:'池上',lat:35.5574,lng:139.6899},
+    {name:'蓮沼',lat:35.5580,lng:139.7026},
+    {name:'蒲田',lat:35.5636,lng:139.7163}
+  ]},
+  {id:'tokyu_tamagawa',name:'東急多摩川線',color:'#E85298',stations:[
+    {name:'多摩川',lat:35.5752,lng:139.6590},
+    {name:'沼部',lat:35.5638,lng:139.6683},
+    {name:'鵜の木',lat:35.5575,lng:139.6769},
+    {name:'下丸子',lat:35.5539,lng:139.6891},
+    {name:'武蔵新田',lat:35.5538,lng:139.7013},
+    {name:'矢口渡',lat:35.5572,lng:139.7113},
+    {name:'蒲田',lat:35.5636,lng:139.7163}
+  ]}
+];
+
+/* モノレール・新交通 */
+const MONO_LINES = [
+  {id:'monorail',name:'東京モノレール',color:'#005BAC',stations:[
+    {name:'浜松町',lat:35.6558,lng:139.7572},
+    {name:'天王洲アイル',lat:35.6282,lng:139.7386},
+    {name:'大井競馬場前',lat:35.5984,lng:139.7383},
+    {name:'流通センター',lat:35.5729,lng:139.7462},
+    {name:'昭和島',lat:35.5642,lng:139.7549},
+    {name:'整備場',lat:35.5533,lng:139.7638},
+    {name:'天空橋',lat:35.5425,lng:139.7728},
+    {name:'羽田空港第3ターミナル',lat:35.5493,lng:139.7817},
+    {name:'羽田空港第1・第2ターミナル',lat:35.5494,lng:139.7815}
+  ]},
+  {id:'yurikamome',name:'ゆりかもめ',color:'#7ECEF4',stations:[
+    {name:'新橋',lat:35.6642,lng:139.7575},
+    {name:'汐留',lat:35.6572,lng:139.7575},
+    {name:'竹芝',lat:35.6536,lng:139.7588},
+    {name:'日の出',lat:35.6494,lng:139.7632},
+    {name:'芝浦ふ頭',lat:35.6424,lng:139.7621},
+    {name:'お台場海浜公園',lat:35.6267,lng:139.7749},
+    {name:'台場',lat:35.6285,lng:139.7756},
+    {name:'東京国際クルーズターミナル',lat:35.6246,lng:139.7826},
+    {name:'テレコムセンター',lat:35.6191,lng:139.7841},
+    {name:'青海',lat:35.6232,lng:139.7769},
+    {name:'東京ビッグサイト',lat:35.6299,lng:139.7940},
+    {name:'有明',lat:35.6316,lng:139.7953},
+    {name:'有明テニスの森',lat:35.6348,lng:139.7993},
+    {name:'市場前',lat:35.6413,lng:139.7968},
+    {name:'新豊洲',lat:35.6460,lng:139.7958},
+    {name:'豊洲',lat:35.6554,lng:139.7957}
+  ]},
+  {id:'rinkai',name:'りんかい線',color:'#9C27B0',stations:[
+    {name:'大崎',lat:35.6197,lng:139.7283},
+    {name:'品川シーサイド',lat:35.6063,lng:139.7402},
+    {name:'天王洲アイル',lat:35.6282,lng:139.7386},
+    {name:'東京テレポート',lat:35.6274,lng:139.7762},
+    {name:'国際展示場',lat:35.6296,lng:139.7949},
+    {name:'東雲',lat:35.6444,lng:139.8062},
+    {name:'新木場',lat:35.6432,lng:139.8213}
+  ]}
+];
+
+/* ── 初期化 ── */
+const map = L.map('map',{center:[35.6812,139.7671],zoom:12,zoomControl:true});
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'&copy; OpenStreetMap contributors',maxZoom:18
+}).addTo(map);
+
+const ALL_LINES=[...LINES.metro,...LINES.toei,...LINES.jr,...TOKYU_LINES,...MONO_LINES];
+const activeLines={}, layerGroups={};
+
+/* 駅→路線インデックス */
+const stationIndex={};
+ALL_LINES.forEach(line=>{
+  line.stations.forEach(s=>{
+    if(!stationIndex[s.name]) stationIndex[s.name]=[];
+    if(!stationIndex[s.name].find(x=>x.lineId===line.id))
+      stationIndex[s.name].push({lineId:line.id,lineName:line.name,color:line.color,lat:s.lat,lng:s.lng});
+  });
+});
+const ALL_STATION_NAMES=Object.keys(stationIndex).sort((a,b)=>a.localeCompare(b,'ja'));
+
+/* ══ 読みがな・ローマ字検索インデックス ══ */
+const YOMI = {
+  '渋谷':'しぶや','新宿':'しんじゅく','池袋':'いけぶくろ','上野':'うえの','東京':'とうきょう',
+  '銀座':'ぎんざ','秋葉原':'あきはばら','品川':'しながわ','新橋':'しんばし','有楽町':'ゆうらくちょう',
+  '浅草':'あさくさ','押上':'おしあげ','錦糸町':'きんしちょう','北千住':'きたせんじゅ','南千住':'みなみせんじゅ',
+  '三ノ輪':'みのわ','入谷':'いりや','仲御徒町':'なかおかちまち','御徒町':'おかちまち','鶯谷':'うぐいすだに',
+  '日暮里':'にっぽり','西日暮里':'にしにっぽり','田端':'たばた','駒込':'こまごめ','巣鴨':'すがも',
+  '大塚':'おおつか','目白':'めじろ','高田馬場':'たかだのばば','新大久保':'しんおおくぼ','代々木':'よよぎ',
+  '原宿':'はらじゅく','恵比寿':'えびす','目黒':'めぐろ','五反田':'ごたんだ','大崎':'おおさき',
+  '品川':'しながわ','田町':'たまち','浜松町':'はままつちょう','神田':'かんだ','御茶ノ水':'おちゃのみず',
+  '水道橋':'すいどうばし','飯田橋':'いいだばし','市ケ谷':'いちがや','四ツ谷':'よつや','信濃町':'しなのまち',
+  '千駄ケ谷':'せんだがや','代々木':'よよぎ','大久保':'おおくぼ','東中野':'ひがしなかの','中野':'なかの',
+  '落合':'おちあい','高田馬場':'たかだのばば','早稲田':'わせだ','神楽坂':'かぐらざか','九段下':'くだんした',
+  '竹橋':'たけばし','大手町':'おおてまち','日本橋':'にほんばし','茅場町':'かやばちょう',
+  '門前仲町':'もんぜんなかちょう','木場':'きば','東陽町':'とうようちょう','南砂町':'みなみすなまち',
+  '西葛西':'にしかさい','葛西':'かさい','浦安':'うらやす','南行徳':'みなみぎょうとく',
+  '行徳':'ぎょうとく','妙典':'みょうでん','原木中山':'ばらきなかやま','西船橋':'にしふなばし',
+  '表参道':'おもてさんどう','外苑前':'がいえんまえ','青山一丁目':'あおやまいっちょうめ',
+  '赤坂見附':'あかさかみつけ','溜池山王':'ためいけさんのう','虎ノ門':'とらのもん',
+  '京橋':'きょうばし','三越前':'みつこしまえ','末広町':'すえひろちょう',
+  '上野広小路':'うえのひろこうじ','稲荷町':'いなりちょう','田原町':'たわらまち',
+  '荻窪':'おぎくぼ','南阿佐ケ谷':'みなみあさがや','新高円寺':'しんこうえんじ',
+  '東高円寺':'ひがしこうえんじ','新中野':'しんなかの','中野坂上':'なかのさかうえ',
+  '西新宿':'にししんじゅく','新宿三丁目':'しんじゅくさんちょうめ','新宿御苑前':'しんじゅくぎょえんまえ',
+  '四谷三丁目':'よつやさんちょうめ','国会議事堂前':'こっかいぎじどうまえ','霞ケ関':'かすみがせき',
+  '中目黒':'なかめぐろ','広尾':'ひろお','六本木':'ろっぽんぎ','神谷町':'かみやちょう',
+  '日比谷':'ひびや','東銀座':'ひがしぎんざ','築地':'つきじ','八丁堀':'はっちょうぼり',
+  '人形町':'にんぎょうちょう','小伝馬町':'こでんまちょう','代々木上原':'よよぎうえはら',
+  '代々木公園':'よよぎこうえん','明治神宮前':'めいじじんぐうまえ','乃木坂':'のぎざか',
+  '赤坂':'あかさか','二重橋前':'にじゅうばしまえ','新御茶ノ水':'しんおちゃのみず',
+  '湯島':'ゆしま','根津':'ねづ','千駄木':'せんだぎ','町屋':'まちや',
+  '和光市':'わこうし','地下鉄成増':'ちかてつなりまし','地下鉄赤塚':'ちかてつあかつか',
+  '平和台':'へいわだい','氷川台':'ひかわだい','小竹向原':'こたけむかいはら',
+  '千川':'せんかわ','要町':'かなめちょう','東池袋':'ひがしいけぶくろ',
+  '護国寺':'ごこくじ','江戸川橋':'えどがわばし','麹町':'こうじまち',
+  '永田町':'ながたちょう','桜田門':'さくらだもん','銀座一丁目':'ぎんざいっちょうめ',
+  '新富町':'しんとみちょう','月島':'つきしま','豊洲':'とよす','辰巳':'たつみ','新木場':'しんきば',
+  '半蔵門':'はんぞうもん','神保町':'じんぼうちょう','水天宮前':'すいてんぐうまえ',
+  '清澄白河':'きよすみしらかわ','住吉':'すみよし','白金台':'しろかねだい','白金高輪':'しろかねたかなわ',
+  '麻布十番':'あざぶじゅうばん','六本木一丁目':'ろっぽんぎいっちょうめ','東大前':'とうだいまえ',
+  '本駒込':'ほんこまごめ','西ケ原':'にしがはら','王子':'おうじ','王子神谷':'おうじかみや',
+  '志茂':'しも','赤羽岩淵':'あかばねいわぶち','雑司が谷':'ぞうしがや','西早稲田':'にしわせだ',
+  '東新宿':'ひがししんじゅく','北参道':'きたさんどう','西馬込':'にしまごめ','馬込':'まごめ',
+  '中延':'なかのぶ','戸越':'とごし','大崎広小路':'おおさきひろこうじ','泉岳寺':'せんがくじ',
+  '三田':'みた','大門':'だいもん','宝町':'たからちょう','東日本橋':'ひがしにほんばし',
+  '浅草橋':'あさくさばし','蔵前':'くらまえ','本所吾妻橋':'ほんじょあづまばし',
+  '芝公園':'しばこうえん','御成門':'おなりもん','内幸町':'うちさいわいちょう',
+  '白山':'はくさん','千石':'せんごく','西巣鴨':'にしすがも','新板橋':'しんいたばし',
+  '板橋区役所前':'いたばしくやくしょまえ','板橋本町':'いたばしほんちょう','本蓮沼':'もとはすぬま',
+  '志村坂上':'しむらさかうえ','志村三丁目':'しむらさんちょうめ','蓮根':'はすね',
+  '西台':'にしだい','高島平':'たかしまだいら','新高島平':'しんたかしまだいら','西高島平':'にしたかしまだいら',
+  '曙橋':'あけぼのばし','小川町':'おがわまち','岩本町':'いわもとちょう','馬喰横山':'ばくろよこやま',
+  '東大島':'ひがしおおじま','大島':'おおじま','西大島':'にしおおじま','瑞江':'みずえ',
+  '篠崎':'しのざき','本八幡':'もとやわた','都庁前':'とちょうまえ','新宿西口':'しんじゅくにしぐち',
+  '若松河田':'わかまつかわだ','牛込柳町':'うしごめやなぎちょう','牛込神楽坂':'うしごめかぐらざか',
+  '春日':'かすが','本郷三丁目':'ほんごうさんちょうめ','上野御徒町':'うえのおかちまち',
+  '新御徒町':'しんおかちまち','両国':'りょうごく','森下':'もりした','勝どき':'かちどき',
+  '築地市場':'つきじしじょう','汐留':'しおどめ','赤羽橋':'あかばねばし','国立競技場':'こくりつきょうぎじょう',
+  '西新宿五丁目':'にししんじゅくごちょうめ','東中野':'ひがしなかの','中井':'なかい',
+  '落合南長崎':'おちあいみなみながさき','新江古田':'しんえごた','練馬':'ねりま',
+  '豊島園':'としまえん','練馬春日町':'ねりまかすがちょう','光が丘':'ひかりがおか',
+  '高輪ゲートウェイ':'たかなわげーとうぇい','大井町':'おおいまち','大森':'おおもり','蒲田':'かまた',
+  '船橋':'ふなばし','千葉':'ちば','高円寺':'こうえんじ','阿佐ヶ谷':'あさがや',
+  '西荻窪':'にしおぎくぼ','吉祥寺':'きちじょうじ','三鷹':'みたか','武蔵境':'むさしさかい',
+  '東小金井':'ひがしこがねい','武蔵小金井':'むさしこがねい','国分寺':'こくぶんじ',
+  '西国分寺':'にしこくぶんじ','国立':'くにたち','立川':'たちかわ',
+  '大久保':'おおくぼ','後楽園':'こうらくえん','茗荷谷':'みょうがだに','新大塚':'しんおおつか',
+  '淡路町':'あわじちょう','本郷三丁目':'ほんごうさんちょうめ',
+  /* 東急 */
+  '代官山':'だいかんやま','祐天寺':'ゆうてんじ','学芸大学':'がくげいだいがく',
+  '都立大学':'とりつだいがく','自由が丘':'じゆうがおか','田園調布':'でんえんちょうふ',
+  '多摩川':'たまがわ','新丸子':'しんまるこ','武蔵小杉':'むさしこすぎ','元住吉':'もとすみよし',
+  '日吉':'ひよし','綱島':'つなしま','大倉山':'おおくらやま','菊名':'きくな',
+  '妙蓮寺':'みょうれんじ','白楽':'はくらく','東白楽':'ひがしはくらく','反町':'たんまち',
+  '横浜':'よこはま','不動前':'ふどうまえ','武蔵小山':'むさしこやま','西小山':'にしこやま',
+  '洗足':'せんぞく','大岡山':'おおおかやま','奥沢':'おくざわ','池尻大橋':'いけじりおおはし',
+  '三軒茶屋':'さんげんちゃや','駒沢大学':'こまざわだいがく','桜新町':'さくらしんまち',
+  '用賀':'ようが','二子玉川':'ふたこたまがわ','二子新地':'ふたこしんち','高津':'たかつ',
+  '溝の口':'みぞのくち','梶が谷':'かじがや','宮崎台':'みやざきだい','宮前平':'みやまえだいら',
+  '鷺沼':'さぎぬま','たまプラーザ':'たまぷらーざ','あざみ野':'あざみの','江田':'えだ',
+  '市が尾':'いちがお','藤が丘':'ふじがおか','青葉台':'あおばだい','田奈':'たな','長津田':'ながつた',
+  '下神明':'しもしんめい','戸越公園':'とごしこうえん','荏原町':'えばらちょう','旗の台':'はたのだい',
+  '北千束':'きたせんぞく','緑が丘':'みどりがおか','九品仏':'くほんぶつ','尾山台':'おやまだい',
+  '等々力':'とどろき','上野毛':'かみのげ','戸越銀座':'とごしぎんざ','荏原中延':'えばらなかのぶ',
+  '長原':'ながはら','洗足池':'せんぞくいけ','石川台':'いしかわだい','雪が谷大塚':'ゆきがやおおつか',
+  '御嶽山':'おんたけさん','久が原':'くがはら','千鳥町':'ちどりちょう','池上':'いけがみ',
+  '蓮沼':'はすぬま','沼部':'ぬまべ','鵜の木':'うのき','下丸子':'しもまるこ',
+  '武蔵新田':'むさしにった','矢口渡':'やぐちのわたし',
+  /* モノレール */
+  '天王洲アイル':'てんのうずあいる','大井競馬場前':'おおいけいばじょうまえ',
+  '流通センター':'りゅうつうせんたー','昭和島':'しょうわじま','整備場':'せいびじょう',
+  '天空橋':'てんくうばし','羽田空港第3ターミナル':'はねだくうこうだいさんたーみなる',
+  '羽田空港第1・第2ターミナル':'はねだくうこうだいいちだいにたーみなる',
+  '竹芝':'たけしば','日の出':'ひので','芝浦ふ頭':'しばうらふとう',
+  'お台場海浜公園':'おだいばかいひんこうえん','台場':'だいば',
+  '東京国際クルーズターミナル':'とうきょうこくさいくるーずたーみなる',
+  'テレコムセンター':'てれこむせんたー','青海':'あおみ',
+  '東京ビッグサイト':'とうきょうびっぐさいと','有明':'ありあけ',
+  '有明テニスの森':'ありあけてにすのもり','市場前':'しじょうまえ','新豊洲':'しんとよす',
+  '品川シーサイド':'しながわしーさいど','東京テレポート':'とうきょうてれぽーと',
+  '国際展示場':'こくさいてんじじょう','東雲':'しののめ'
+};
+
+/* ローマ字変換テーブル（ひらがな→ローマ字） */
+const HIRA_TO_ROMA = {
+  'あ':'a','い':'i','う':'u','え':'e','お':'o',
+  'か':'ka','き':'ki','く':'ku','け':'ke','こ':'ko',
+  'さ':'sa','し':'shi','す':'su','せ':'se','そ':'so',
+  'た':'ta','ち':'chi','つ':'tsu','て':'te','と':'to',
+  'な':'na','に':'ni','ぬ':'nu','ね':'ne','の':'no',
+  'は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho',
+  'ま':'ma','み':'mi','む':'mu','め':'me','も':'mo',
+  'や':'ya','ゆ':'yu','よ':'yo',
+  'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro',
+  'わ':'wa','を':'wo','ん':'n',
+  'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
+  'ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
+  'だ':'da','ぢ':'di','づ':'du','で':'de','ど':'do',
+  'ば':'ba','び':'bi','ぶ':'bu','べ':'be','ぼ':'bo',
+  'ぱ':'pa','ぴ':'pi','ぷ':'pu','ぺ':'pe','ぽ':'po',
+  'きゃ':'kya','きゅ':'kyu','きょ':'kyo',
+  'しゃ':'sha','しゅ':'shu','しょ':'sho',
+  'ちゃ':'cha','ちゅ':'chu','ちょ':'cho',
+  'にゃ':'nya','にゅ':'nyu','にょ':'nyo',
+  'ひゃ':'hya','ひゅ':'hyu','ひょ':'hyo',
+  'みゃ':'mya','みゅ':'myu','みょ':'myo',
+  'りゃ':'rya','りゅ':'ryu','りょ':'ryo',
+  'ぎゃ':'gya','ぎゅ':'gyu','ぎょ':'gyo',
+  'じゃ':'ja','じゅ':'ju','じょ':'jo',
+  'びゃ':'bya','びゅ':'byu','びょ':'byo',
+  'ぴゃ':'pya','ぴゅ':'pyu','ぴょ':'pyo',
+  'っ':'t','ー':'-','・':' ','〜':'~','ぁ':'a','ぃ':'i','ぅ':'u','ぇ':'e','ぉ':'o',
+  'ゃ':'ya','ゅ':'yu','ょ':'yo','ゎ':'wa','ゐ':'i','ゑ':'e'
+};
+
+function hiraToRoma(str){
+  let result='';
+  for(let i=0;i<str.length;i++){
+    const two=str.slice(i,i+2);
+    if(HIRA_TO_ROMA[two]){result+=HIRA_TO_ROMA[two];i++;continue;}
+    result+=HIRA_TO_ROMA[str[i]]||str[i];
+  }
+  return result;
+}
+
+/* 検索用インデックス：駅名 → {yomi, roma} */
+const stationSearchIndex={};
+ALL_STATION_NAMES.forEach(name=>{
+  const yomi=YOMI[name]||'';
+  stationSearchIndex[name]={yomi, roma: hiraToRoma(yomi)};
+});
+
+function searchStations(q){
+  if(!q) return [];
+  const lq=q.toLowerCase();
+  const results=[];
+  ALL_STATION_NAMES.forEach(name=>{
+    const {yomi,roma}=stationSearchIndex[name];
+    if(name.startsWith(q)||name.includes(q)) results.push({name,priority:name.startsWith(q)?0:1});
+    else if(yomi && (yomi.startsWith(lq)||yomi.includes(lq))) results.push({name,priority:yomi.startsWith(lq)?2:3});
+    else if(roma && (roma.startsWith(lq)||roma.includes(lq))) results.push({name,priority:roma.startsWith(lq)?4:5});
+  });
+  results.sort((a,b)=>a.priority-b.priority);
+  return results.slice(0,10).map(r=>r.name);
+}
+
+/* ══ 乗り換え駅セット ══ */
+const transferStations=new Set(
+  Object.entries(stationIndex).filter(([,e])=>e.length>=2).map(([n])=>n)
+);
+
+/* ── 常時表示マーカー（全駅小ドット、乗り換え駅はダイヤ形） ── */
+const alwaysLayer=L.layerGroup().addTo(map);
+Object.entries(stationIndex).forEach(([name,entries])=>{
+  const {lat,lng,color}=entries[0];
+  const isTransfer=transferStations.has(name);
+  const cls='always-dot'+(isTransfer?' transfer':'');
+  const size=isTransfer?14:8;
+  const icon=L.divIcon({
+    className:'always-marker',
+    html:`<div class="${cls}" style="background:${color};" title="${name}${isTransfer?' [乗換]':''}"></div>`,
+    iconSize:[size,size],iconAnchor:[size/2,size/2]
+  });
+  const m=L.marker([lat,lng],{icon,zIndexOffset:isTransfer?0:-100}).addTo(alwaysLayer);
+  m.on('click',()=>triggerStationSearch(name));
+});
+
+/* ── 路線オン時レイヤー ── */
+function createLineLayer(line){
+  const group=L.layerGroup();
+  L.polyline(line.stations.map(s=>[s.lat,s.lng]),{color:line.color,weight:4,opacity:0.9,lineJoin:'round'}).addTo(group);
+  line.stations.forEach(s=>{
+    L.circleMarker([s.lat,s.lng],{radius:7,fillColor:line.color,color:'#fff',weight:2,opacity:1,fillOpacity:1}).addTo(group);
+    L.marker([s.lat,s.lng],{
+      icon:L.divIcon({className:'station-label',html:`<div class="station-label-inner">${s.name}</div>`,iconAnchor:[-6,6]}),
+      interactive:false
+    }).addTo(group);
+  });
+  return group;
+}
+
+/* ══ 下バー管理 ══ */
+const bbTabs = document.getElementById('bb-tabs');
+const bbRow  = document.getElementById('bb-station-row');
+const bottomBar = document.getElementById('bottom-bar');
+let activeBbTab = null; // 現在表示中の路線ID
+
+function buildBottomBar(){
+  const onLines = ALL_LINES.filter(l => activeLines[l.id]);
+  bbTabs.innerHTML = '';
+  if(!onLines.length){
+    bottomBar.classList.remove('visible');
+    activeBbTab = null;
+    return;
+  }
+  bottomBar.classList.add('visible');
+  // activeBbTabが有効でなければ最初の路線を選択
+  if(!activeBbTab || !activeLines[activeBbTab]) activeBbTab = onLines[0].id;
+
+  onLines.forEach(line=>{
+    const tab = document.createElement('div');
+    tab.className = 'bb-tab' + (line.id===activeBbTab?' active':'');
+    tab.dataset.id = line.id;
+    tab.style.setProperty('--tab-color', line.color);
+    tab.innerHTML=`<div class="bb-tab-dot" style="background:${line.color};"></div>${line.name}<span class="bb-tab-close" data-id="${line.id}">✕</span>`;
+    tab.addEventListener('click', e=>{
+      if(e.target.classList.contains('bb-tab-close')){
+        e.stopPropagation();
+        setLine(e.target.dataset.id, false);
+        return;
+      }
+      activeBbTab = line.id;
+      buildBottomBar();
+    });
+    bbTabs.appendChild(tab);
+  });
+  renderBbStations(activeBbTab);
+}
+
+function renderBbStations(lineId, highlightName=null){
+  const line = ALL_LINES.find(l=>l.id===lineId);
+  if(!line){ bbRow.innerHTML=''; return; }
+  const color = line.color;
+  bbRow.innerHTML = '';
+
+  // 両方向矢印を先頭に
+  const arrL = document.createElement('div');
+  arrL.className='bb-arrow'; arrL.textContent='◀';
+  bbRow.appendChild(arrL);
+
+  line.stations.forEach((s, i)=>{
+    const wrap = document.createElement('div');
+    wrap.className = 'bb-station' + (s.name===highlightName?' highlighted':'');
+    wrap.style.setProperty('--line-color', color);
+    wrap.innerHTML=`<div class="bb-sdot" style="background:${color};color:${color};"></div><div class="bb-sname">${s.name}</div>`;
+    wrap.addEventListener('click',()=>{
+      map.setView([s.lat,s.lng],15);
+      renderBbStations(lineId, s.name);
+    });
+    bbRow.appendChild(wrap);
+
+    // 駅間コネクタ（最後以外）
+    if(i < line.stations.length-1){
+      const conn = document.createElement('div');
+      conn.style.cssText=`width:18px;height:2px;background:${color};opacity:0.5;flex-shrink:0;align-self:center;margin-bottom:13px;`;
+      bbRow.appendChild(conn);
+    }
+  });
+
+  const arrR = document.createElement('div');
+  arrR.className='bb-arrow'; arrR.textContent='▶';
+  bbRow.appendChild(arrR);
+
+  // ハイライト駅が見えるようにスクロール
+  if(highlightName){
+    const idx = line.stations.findIndex(s=>s.name===highlightName);
+    if(idx>=0){
+      setTimeout(()=>{
+        const nodes = bbRow.querySelectorAll('.bb-station');
+        if(nodes[idx]) nodes[idx].scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+      },50);
+    }
+  }
+}
+
+/* ── トグル ── */
+function toggleLine(id,lineData){
+  const item=document.getElementById(`item-${id}`);
+  if(activeLines[id]){
+    map.removeLayer(layerGroups[id]); delete activeLines[id]; item.classList.remove('active');
+  } else {
+    if(!layerGroups[id]) layerGroups[id]=createLineLayer(lineData);
+    layerGroups[id].addTo(map); activeLines[id]=true; item.classList.add('active');
+  }
+  if(activeLines[id]) activeBbTab = id;
+  buildBottomBar();
+}
+function setLine(id,on){
+  const ld=ALL_LINES.find(l=>l.id===id); if(!ld) return;
+  if(on&&!activeLines[id]) toggleLine(id,ld);
+  if(!on&&activeLines[id]) toggleLine(id,ld);
+}
+function toggleAll(on){
+  ALL_LINES.forEach(l=>{ if(on&&!activeLines[l.id]) toggleLine(l.id,l); if(!on&&activeLines[l.id]) toggleLine(l.id,l); });
+  if(!on) clearSearchResult();
+  buildBottomBar();
+}
+
+/* ── 検索結果クリア ── */
+function clearSearchResult(){
+  searchResult.style.display='none';
+  resultName.textContent='';
+  resultLinesList.innerHTML='';
+  input.value='';
+  selectedStation=null;
+  searchBtn.disabled=true;
+  prevSearchLineIds=[];
+}
+
+/* ── 左サイドバー構築 ── */
+function buildLineItem(line){
+  const ic=LINE_ICONS[line.id]||'?';
+  const div=document.createElement('div');
+  div.className='line-item'; div.id=`item-${line.id}`;
+  div.style.setProperty('--glow-color',line.color+'88');
+  div.style.setProperty('--toggle-color',line.color);
+  div.innerHTML=`
+    <div class="line-badge" style="background:${line.color};">${ic}</div>
+    <span class="line-name">${line.name}</span>
+    <span class="line-count">${line.stations.length}駅</span>
+    <div class="toggle-sw"></div>`;
+  div.addEventListener('click',()=>toggleLine(line.id,line));
+  return div;
+}
+document.getElementById('metro-lines').append(...LINES.metro.map(buildLineItem));
+document.getElementById('toei-lines').append(...LINES.toei.map(buildLineItem));
+document.getElementById('jr-lines').append(...LINES.jr.map(buildLineItem));
+document.getElementById('tokyu-lines').append(...TOKYU_LINES.map(buildLineItem));
+document.getElementById('mono-lines').append(...MONO_LINES.map(buildLineItem));
+
+/* ── 右サイドバーのアコーディオンは削除 ── */
+
+/* ── 検索 ── */
+const input=document.getElementById('station-input');
+const acList=document.getElementById('autocomplete-list');
+const searchBtn=document.getElementById('search-btn');
+const searchResult=document.getElementById('search-result');
+const resultName=document.getElementById('result-station-name');
+const resultLinesList=document.getElementById('result-lines-list');
+let selectedStation=null, acIndex=-1;
+
+function showAC(val){
+  if(!val.trim()){acList.style.display='none';return;}
+  const matches=searchStations(val.trim());
+  if(!matches.length){acList.style.display='none';return;}
+  acList.innerHTML=matches.map((n,i)=>{
+    const dots=(stationIndex[n]||[]).map(x=>`<div class="ac-dot" style="background:${x.color};"></div>`).join('');
+    const yomi=stationSearchIndex[n]?.yomi||'';
+    const hint=yomi?`<span style="font-size:9px;color:#5a6888;margin-left:2px;">${yomi}</span>`:'';
+    return `<div class="ac-item" data-name="${n}" data-idx="${i}"><div class="ac-dots">${dots}</div>${n}${hint}</div>`;
+  }).join('');
+  acList.style.display='block'; acIndex=-1;
+  acList.querySelectorAll('.ac-item').forEach(el=>{
+    el.addEventListener('mousedown',e=>{e.preventDefault();selectStation(el.dataset.name);});
+  });
+}
+function selectStation(name){
+  input.value=name; selectedStation=name;
+  acList.style.display='none'; searchBtn.disabled=false;
+}
+
+/* 前回の検索で開いた路線IDを記憶 */
+let prevSearchLineIds = [];
+
+function doSearch(name){
+  if(!name||!stationIndex[name]) return;
+  const entries=stationIndex[name];
+
+  // 前回の検索でオンにした路線を、左サイドバーで手動オンにされていなければオフに
+  prevSearchLineIds.forEach(id=>{
+    // 今回の検索対象路線は除く
+    if(!entries.find(e=>e.lineId===id)) setLine(id,false);
+  });
+
+  entries.forEach(e=>setLine(e.lineId,true));
+  prevSearchLineIds = entries.map(e=>e.lineId);
+
+  map.setView([entries[0].lat,entries[0].lng],15);
+  resultName.textContent=`${name}駅`;
+  resultLinesList.innerHTML=entries.map(e=>`
+    <div class="result-line-tag">
+      <div class="result-swatch" style="background:${e.color};"></div>
+      <div class="result-badge" style="background:${e.color};">${LINE_ICONS[e.lineId]||'?'}</div>
+      ${e.lineName}
+    </div>`).join('');
+  searchResult.style.display='block';
+  activeBbTab = entries[0].lineId;
+  buildBottomBar();
+  renderBbStations(activeBbTab, name);
+}
+
+/* マーカークリック → 検索実行 */
+function triggerStationSearch(name){
+  selectStation(name);
+  doSearch(name);
+}
+
+input.addEventListener('input',()=>{ selectedStation=null; searchBtn.disabled=true; showAC(input.value); });
+input.addEventListener('keydown',e=>{
+  const items=acList.querySelectorAll('.ac-item');
+  if(!items.length) return;
+  if(e.key==='ArrowDown'){e.preventDefault();acIndex=Math.min(acIndex+1,items.length-1);items.forEach((el,i)=>el.classList.toggle('selected',i===acIndex));input.value=items[acIndex].dataset.name;}
+  else if(e.key==='ArrowUp'){e.preventDefault();acIndex=Math.max(acIndex-1,0);items.forEach((el,i)=>el.classList.toggle('selected',i===acIndex));input.value=items[acIndex].dataset.name;}
+  else if(e.key==='Enter'){
+    if(acIndex>=0&&items[acIndex]) selectStation(items[acIndex].dataset.name);
+    else if(stationIndex[input.value.trim()]) selectStation(input.value.trim());
+    doSearch(selectedStation||input.value.trim());
+  }
+  else if(e.key==='Escape') acList.style.display='none';
+});
+document.addEventListener('click',e=>{ if(!document.getElementById('search-wrap').contains(e.target)) acList.style.display='none'; });
+searchBtn.addEventListener('click',()=>doSearch(selectedStation||input.value.trim()));
+
+/* ── サイドバー開閉（左のみ） ── */
+const sidebarState={left:true};
+
+function updateBtnPositions(){
+  const leftW = sidebarState.left ? 260 : 0;
+  document.getElementById('toggle-left').style.left = leftW + 'px';
+}
+
+function toggleSidebar(side){
+  const el=document.getElementById(`sidebar-${side}`);
+  const btn=document.getElementById(`toggle-${side}`);
+  sidebarState[side]=!sidebarState[side];
+  el.classList.toggle('collapsed',!sidebarState[side]);
+  if(side==='left'){
+    btn.textContent=sidebarState[side]?'◀':'▶';
+    btn.title=sidebarState[side]?'閉じる':'開く';
+  }
+  updateBtnPositions();
+  setTimeout(()=>map.invalidateSize(),280);
+}
+
+/* 初期ボタン位置 */
+updateBtnPositions();
+</script>
+</body>
+</html>
